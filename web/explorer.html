@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Folder Explorer (N-ary Tree)</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1d2330;--mut:#667085;--bd:#dde1e8;--ac:#2563eb;--acbg:#e0eaff;--hv:#eef1f6;--er:#c62828}
+@media(prefers-color-scheme:dark){:root{--bg:#14171d;--card:#1d222b;--tx:#e6e9ef;--mut:#98a2b3;--bd:#323946;--ac:#6ea0ff;--acbg:#27324d;--hv:#262c37;--er:#ff7b72}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.45 system-ui,Segoe UI,sans-serif;padding:16px}
+h1{font-size:18px;margin:0 0 12px}
+.grid{display:grid;grid-template-columns:minmax(280px,1fr) minmax(280px,1fr);gap:12px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px;min-width:0}
+.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin:0 0 8px}
+.bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+input[type=text],input[type=number],select{background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:6px 8px;font:inherit;min-width:0}
+button,.btn{background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer}
+button:hover,.btn:hover{background:var(--hv)}
+button.pri{background:var(--ac);color:#fff;border-color:var(--ac)}
+button.dan{color:var(--er)}
+#tree{max-height:420px;overflow:auto;border:1px solid var(--bd);border-radius:6px;padding:4px;user-select:none}
+.row{display:flex;gap:4px;align-items:center;padding:2px 6px;border-radius:5px;cursor:pointer;white-space:nowrap}
+.row:hover{background:var(--hv)}.row.sel{background:var(--acbg)}
+.row .sz{margin-left:auto;color:var(--mut);font-size:12px;padding-left:12px}
+.arrow{width:14px;color:var(--mut);text-align:center;font-size:11px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.stat{background:var(--bg);border-radius:8px;padding:8px;text-align:center}
+.stat b{display:block;font-size:20px}.stat span{color:var(--mut);font-size:12px}
+pre{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:10px;margin:8px 0 0;overflow:auto;max-height:260px;font:13px/1.35 Consolas,monospace}
+#msg{min-height:20px;margin:6px 0;font-size:13px}.err{color:var(--er)}.ok{color:var(--ac)}
+.res{padding:2px 6px;cursor:pointer;border-radius:4px;font-family:Consolas,monospace;font-size:12.5px}.res:hover{background:var(--hv)}
+.mut{color:var(--mut)}
+</style>
+</head>
+<body>
+<h1>📁 Folder Explorer <span class="mut" style="font-weight:400">— N-ary Tree</span></h1>
+
+<!-- ============ NÚCLEO (port fiel de file_explorer.py) ============ -->
+<script id="core">
+class ExplorerError extends Error {}
+
+class FSNode {
+  constructor(name, kind, size = 0, parent = null) {
+    this.name = name; this.kind = kind; this.size = size;
+    this.parent = parent; this.children = [];
+  }
+  get isFile() { return this.kind === 'file'; }
+  get isFolder() { return this.kind === 'folder'; }
+  get path() {                       // O(d)
+    const names = []; let n = this;
+    while (n) { names.push(n.name); n = n.parent; }
+    return '/' + names.reverse().join('/');
+  }
+}
+
+class FileExplorer {
+  constructor(rootName = 'my-project') {
+    FileExplorer.checkName(rootName);
+    this.root = new FSNode(rootName, 'folder');
+  }
+  static checkName(n) {
+    if (!n || n.includes('/') || n === '.' || n === '..') throw new ExplorerError(`Invalid name: "${n}"`);
+  }
+  static split(path) {
+    if (typeof path !== 'string' || !path.startsWith('/')) throw new ExplorerError(`Path must start with "/": ${path}`);
+    const parts = path.split('/').filter(Boolean);
+    if (!parts.length) throw new ExplorerError('Empty path');
+    if (parts.some(p => p === '.' || p === '..')) throw new ExplorerError('"." and ".." are not allowed');
+    return parts;
+  }
+  child(folder, name) { return folder.children.find(c => c.name === name) || null; }
+
+  resolve(path) {
+    if (path == null) return this.root;
+    const parts = FileExplorer.split(path);
+    if (parts[0] !== this.root.name) throw new ExplorerError(`Does not exist: ${path}`);
+    let node = this.root;
+    for (const name of parts.slice(1)) {
+      if (node.isFile) throw new ExplorerError(`Does not exist: ${path}`);
+      const nx = this.child(node, name);
+      if (!nx) throw new ExplorerError(`Does not exist: ${path}`);
+      node = nx;
+    }
+    return node;
+  }
+  exists(path) { try { this.resolve(path); return true; } catch { return false; } }
+
+  create(path, kind, size, parents) {
+    const parts = FileExplorer.split(path);
+    if (parts[0] !== this.root.name) throw new ExplorerError(`The root is "/${this.root.name}"`);
+    if (parts.length === 1) throw new ExplorerError('The root already exists');
+    parts.forEach(FileExplorer.checkName);
+    let folder = this.root;
+    for (const name of parts.slice(1, -1)) {
+      let nx = this.child(folder, name);
+      if (!nx) {
+        if (!parents) throw new ExplorerError(`Folder "${name}" does not exist`);
+        nx = new FSNode(name, 'folder', 0, folder); folder.children.push(nx);
+      } else if (nx.isFile) throw new ExplorerError(`"${name}" is a file`);
+      folder = nx;
+    }
+    const name = parts[parts.length - 1];
+    if (this.child(folder, name)) throw new ExplorerError(`Already exists: ${path}`);
+    const node = new FSNode(name, kind, kind === 'file' ? size : 0, folder);
+    folder.children.push(node);
+    return node;
+  }
+  addFolder(path, parents = false) { return this.create(path, 'folder', 0, parents); }
+  addFile(path, size = 0, parents = false) {
+    if (size < 0 || Number.isNaN(size)) throw new ExplorerError('Invalid size');
+    return this.create(path, 'file', size, parents);
+  }
+  remove(path) {
+    const node = this.resolve(path);
+    if (node === this.root) throw new ExplorerError('The root cannot be removed');
+    node.parent.children.splice(node.parent.children.indexOf(node), 1);
+    node.parent = null;
+    return node;
+  }
+
+  *walk(path) {                       // DFS pre-orden con PILA (sin recursión)
+    const stack = [this.resolve(path)];
+    while (stack.length) {
+      const n = stack.pop(); yield n;
+      for (let i = n.children.length - 1; i >= 0; i--) stack.push(n.children[i]);
+    }
+  }
+  countFiles(path) { let c = 0; for (const n of this.walk(path)) if (n.isFile) c++; return c; }
+  countFolders(path) {
+    const s = this.resolve(path); let c = 0;
+    for (const n of this.walk(path)) if (n.isFolder && n !== s) c++;
+    return c;
+  }
+  totalSize(path) { let t = 0; for (const n of this.walk(path)) if (n.isFile) t += n.size; return t; }
+  find(pattern, kind = null) {
+    const re = new RegExp('^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+    const out = [];
+    for (const n of this.walk()) if (re.test(n.name) && (!kind || n.kind === kind)) out.push(n);
+    return out;
+  }
+
+  static ordered(node, showFiles = true, sort = true) {
+    const k = node.children.filter(c => showFiles || c.isFolder);
+    if (sort) k.sort((a, b) => (a.isFile - b.isFile) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    return k;
+  }
+  static label(n) { return n.isFolder ? n.name + '/' : n.name; }
+
+  render(path, { style = 'tree', showFiles = true, maxDepth = null, sort = true } = {}) {
+    const start = this.resolve(path);
+    const lines = [FileExplorer.label(start)];
+    const stack = [];
+    const push = (parent, prefix, depth) => {
+      const kids = FileExplorer.ordered(parent, showFiles, sort);
+      for (let i = kids.length - 1; i >= 0; i--) stack.push([kids[i], prefix, i === kids.length - 1, depth]);
+    };
+    if (start.isFolder) push(start, '', 1);
+    while (stack.length) {
+      const [node, prefix, last, depth] = stack.pop();
+      let childPrefix = '';
+      if (style === 'tree') {
+        lines.push(prefix + (last ? '└── ' : '├── ') + FileExplorer.label(node));
+        childPrefix = prefix + (last ? '    ' : '│   ');
+      } else lines.push('  '.repeat(depth) + FileExplorer.label(node));
+      if (node.isFolder && (maxDepth == null || depth < maxDepth)) push(node, childPrefix, depth + 1);
+    }
+    return lines.join('\n');
+  }
+}
+if (typeof module !== 'undefined') module.exports = { FileExplorer, FSNode, ExplorerError };
+</script>
+
+<!-- ============ INTERFAZ ============ -->
+<div class="grid">
+  <div class="card">
+    <h2>Browser</h2>
+    <div class="bar">
+      <input type="text" id="name" placeholder="name or path: src/utils/a.py" style="flex:1 1 170px">
+      <input type="number" id="size" placeholder="bytes" min="0" style="width:80px">
+    </div>
+    <div class="bar">
+      <button class="pri" id="bFolder">+ Folder</button>
+      <button class="pri" id="bFile">+ File</button>
+      <button class="dan" id="bDel">Delete</button>
+      <label class="btn" title="Load a real folder from your PC (read-only, nothing is uploaded)">
+        📂 Load from PC<input type="file" id="disk" webkitdirectory multiple hidden>
+      </label>
+    </div>
+    <div id="msg"></div>
+    <div id="tree"></div>
+    <div class="mut" style="margin-top:6px;font-size:12px">Click a folder to open/close and select it. New items are created inside the selected folder.</div>
+  </div>
+
+  <div class="card">
+    <h2>Summary of <span id="selPath" style="text-transform:none"></span></h2>
+    <div class="stats">
+      <div class="stat"><b id="nFiles">0</b><span>files</span></div>
+      <div class="stat"><b id="nFolders">0</b><span>subfolders</span></div>
+      <div class="stat"><b id="nSize">0</b><span>size</span></div>
+    </div>
+    <div class="bar">
+      <input type="text" id="q" placeholder="Search: *.py, style.css…" style="flex:1 1 140px">
+      <button id="bFind">Search</button>
+    </div>
+    <div id="results"></div>
+    <div class="bar" style="margin-top:8px">
+      <select id="style"><option value="tree">Tree style</option><option value="indent">Indent style</option></select>
+      <label><input type="checkbox" id="showFiles" checked> files</label>
+      <button id="bCopy">Copy</button>
+    </div>
+    <pre id="out"></pre>
+  </div>
+</div>
+
+<script>
+let ex = new FileExplorer('my-project');
+let selected = ex.root;
+const expanded = new Set([ex.root]);
+const $ = id => document.getElementById(id);
+
+// Datos de ejemplo (los mismos de la demo en Python)
+function seed() {
+  ex = new FileExplorer('my-project');
+  [['README.md',1200],['src/index.py',2048],['src/utils/helpers.py',900],['assets/style.css',512],
+   ['assets/img/logo.png',20480],['tests/test_main.py',700]]
+    .forEach(([p, s]) => ex.addFile('/my-project/' + p, s, true));
+  ex.addFolder('/my-project/docs');
+  selected = ex.root; expanded.clear(); expanded.add(ex.root);
+  [...ex.walk()].filter(n => n.isFolder && n.parent === ex.root).forEach(n => expanded.add(n));
+}
+
+const fmt = b => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
+function say(t, cls = 'ok') { $('msg').textContent = t; $('msg').className = cls; }
+
+function visibleRows() {            // aplanado con PILA, respetando carpetas abiertas
+  const out = [], st = [[ex.root, 0]];
+  while (st.length) {
+    const [n, d] = st.pop(); out.push([n, d]);
+    if (n.isFolder && expanded.has(n)) {
+      const k = FileExplorer.ordered(n);
+      for (let i = k.length - 1; i >= 0; i--) st.push([k[i], d + 1]);
+    }
+  }
+  return out;
+}
+
+function draw() {
+  const tree = $('tree'); tree.textContent = '';
+  for (const [n, d] of visibleRows()) {
+    const r = document.createElement('div');
+    r.className = 'row' + (n === selected ? ' sel' : '');
+    r.style.paddingLeft = (6 + d * 16) + 'px';
+    const a = document.createElement('span'); a.className = 'arrow';
+    a.textContent = n.isFolder ? (expanded.has(n) ? '▼' : '▶') : '';
+    const t = document.createElement('span');
+    t.textContent = (n.isFolder ? '📁 ' : '📄 ') + n.name;
+    r.append(a, t);
+    if (n.isFile) { const s = document.createElement('span'); s.className = 'sz'; s.textContent = fmt(n.size); r.append(s); }
+    r.onclick = () => {
+      selected = n;
+      if (n.isFolder) expanded.has(n) ? expanded.delete(n) : expanded.add(n);
+      refresh();
+    };
+    tree.append(r);
+  }
+}
+
+function drawInfo() {
+  const p = selected.path;
+  $('selPath').textContent = p;
+  $('nFiles').textContent = ex.countFiles(p);
+  $('nFolders').textContent = ex.countFolders(p);
+  $('nSize').textContent = fmt(ex.totalSize(p));
+  $('out').textContent = ex.render(p, { style: $('style').value, showFiles: $('showFiles').checked });
+}
+function refresh() { draw(); drawInfo(); }
+
+function targetFolder() { return selected.isFolder ? selected : selected.parent; }
+function add(kind) {
+  const rel = $('name').value.trim().replace(/^\/+|\/+$/g, '');
+  if (!rel) return say('Enter a name or relative path.', 'err');
+  const full = targetFolder().path + '/' + rel;
+  try {
+    const node = kind === 'file' ? ex.addFile(full, parseInt($('size').value || '0', 10), true) : ex.addFolder(full, true);
+    for (let p = node.parent; p; p = p.parent) expanded.add(p);
+    selected = node; $('name').value = ''; $('size').value = '';
+    say(`Created: ${node.path}`); refresh();
+  } catch (e) { say(e.message, 'err'); }
+}
+$('bFolder').onclick = () => add('folder');
+$('bFile').onclick = () => add('file');
+$('name').onkeydown = e => { if (e.key === 'Enter') add('file'); };
+
+$('bDel').onclick = () => {
+  try {
+    const p = selected.path, parent = selected.parent;
+    if (!confirm(`Delete ${p} and all its contents?`)) return;
+    ex.remove(p); selected = parent; say(`Deleted: ${p}`); refresh();
+  } catch (e) { say(e.message, 'err'); }
+};
+
+function find() {
+  const q = $('q').value.trim(), box = $('results'); box.textContent = '';
+  if (!q) return;
+  const found = ex.find(q);
+  const h = document.createElement('div'); h.className = 'mut';
+  h.textContent = found.length + ' result(s)'; box.append(h);
+  found.slice(0, 50).forEach(n => {
+    const d = document.createElement('div'); d.className = 'res'; d.textContent = n.path;
+    d.onclick = () => { for (let p = n.parent; p; p = p.parent) expanded.add(p); selected = n; refresh(); };
+    box.append(d);
+  });
+}
+$('bFind').onclick = find;
+$('q').onkeydown = e => { if (e.key === 'Enter') find(); };
+
+$('style').onchange = $('showFiles').onchange = drawInfo;
+$('bCopy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('out').textContent); say('Structure copied.'); }
+  catch { say('Could not copy automatically.', 'err'); }
+};
+
+// Equivalente a from_disk(): lee una carpeta real elegida por el usuario
+$('disk').onchange = e => {
+  const files = [...e.target.files]; if (!files.length) return;
+  const rootName = files[0].webkitRelativePath.split('/')[0];
+  ex = new FileExplorer(rootName); let skipped = 0;
+  for (const f of files) {
+    try { ex.addFile('/' + f.webkitRelativePath, f.size, true); } catch { skipped++; }
+  }
+  selected = ex.root; expanded.clear(); expanded.add(ex.root);
+  say(`Loaded "${rootName}": ${ex.countFiles()} files` + (skipped ? ` (${skipped} skipped)` : '') + '. Empty folders are not included.');
+  e.target.value = ''; refresh();
+};
+
+seed(); refresh();
+</script>
+</body>
+</html>
