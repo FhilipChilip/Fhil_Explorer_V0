@@ -1,8 +1,11 @@
 # Explorador de Carpetas (Árbol N-ario)
-# Requiere Python 3.8 o superior.
+# Requiere Python 3.9 o superior.
 #
-# El sistema (file_explorer.py) usa SOLO la biblioteca estándar de Python,
-# por lo que no necesita dependencias para ejecutarse.
-#
-# Dependencias para ejecutar las pruebas (test_file_explorer.py):
+# La lógica (src/file_explorer.py) usa solo la biblioteca estándar.
+# El servidor (src/server.py) necesita:
+fastapi>=0.110
+uvicorn>=0.29
+
+# Pruebas (httpx lo exige el TestClient de FastAPI):
 pytest>=7.0
+httpx>=0.27
