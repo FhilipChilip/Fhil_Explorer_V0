@@ -119,6 +119,50 @@ def test_from_disk_and_to_dict():
             "main.py", "src", "empty"}
 
 
+def test_rename():
+    ex = build()
+    node = ex.rename("/my-project/src/index.py", "main.py")
+    assert node.path == "/my-project/src/main.py" and not ex.exists("/my-project/src/index.py")
+    ex.rename("/my-project/src", "source")  # los descendientes siguen la nueva ruta
+    assert ex.exists("/my-project/source/utils/helpers.py")
+    for call, exc in [
+        (lambda: ex.rename("/my-project/source/main.py", "utils"), DuplicateNameError),
+        (lambda: ex.rename("/my-project/source/main.py", "a/b"), InvalidPathError),
+        (lambda: ex.rename("/my-project/source/main.py", ".."), InvalidPathError),
+        (lambda: ex.rename("/my-project", "other"), InvalidPathError),
+        (lambda: ex.rename("/my-project/missing", "x"), PathNotFoundError),
+    ]:
+        try:
+            call()
+        except exc:
+            continue
+        raise AssertionError(f"should have raised {exc.__name__}")
+    ex.validate()
+
+
+def test_move():
+    ex = build()
+    ex.move("/my-project/src/index.py", "/my-project/assets")
+    assert ex.exists("/my-project/assets/index.py") and not ex.exists("/my-project/src/index.py")
+    ex.move("/my-project/src/utils", "/my-project/tests")  # mueve un subárbol completo
+    assert ex.exists("/my-project/tests/utils/helpers.py") and ex.count_files() == 5
+    assert ex.move("/my-project/README.md", "/my-project").path == "/my-project/README.md"  # mismo padre: no-op
+    ex.add_file("/my-project/assets/README.md")
+    for call, exc in [
+        (lambda: ex.move("/my-project/tests", "/my-project/tests/utils"), InvalidPathError),  # ciclo
+        (lambda: ex.move("/my-project/tests", "/my-project/tests"), InvalidPathError),
+        (lambda: ex.move("/my-project/README.md", "/my-project/assets"), DuplicateNameError),
+        (lambda: ex.move("/my-project/README.md", "/my-project/assets/style.css"), NotAFolderError),
+        (lambda: ex.move("/my-project", "/my-project/docs"), InvalidPathError),
+    ]:
+        try:
+            call()
+        except exc:
+            continue
+        raise AssertionError(f"should have raised {exc.__name__}")
+    ex.validate()
+
+
 if __name__ == "__main__":
     import pytest, sys
     sys.exit(pytest.main([__file__, "-q"]))
