@@ -1,6 +1,9 @@
 """
-Explorador de Carpetas (Árbol N-ario) 
+Explorador de Carpetas (Árbol N-ario) — Caso 2
 ==============================================
+
+BRIEF (Fase 0 de la skill)
+--------------------------
 * Problema   : representar la estructura de carpetas de un proyecto para que una
                interfaz pueda navegarla (aquí solo se desarrolla la lógica).
 * Nodo       : FSNode (carpeta o archivo).
@@ -13,7 +16,7 @@ Explorador de Carpetas (Árbol N-ario)
 * Estructura : Árbol N-ario con lista de hijos (jerarquía libre, sin orden de clave).
 * Soporte    : PILA (DFS iterativo: conteos, búsqueda, impresión).
                No hay recursión -> sin límite de profundidad de Python.
-               
+
 INVARIANTES
 -----------
 1. Una sola raíz (carpeta) con parent=None.
@@ -208,6 +211,44 @@ class FileExplorer:
         node.parent = None
         return node
 
+    def rename(self, path: str, new_name: str) -> FSNode:
+        """Cambia el nombre de un archivo o carpeta (la raíz no se puede renombrar).
+        Falla si ya existe un hermano con ese nombre. O(k)."""
+        node = self._resolve(path)
+        if node is self.root:
+            raise InvalidPathError("the root cannot be renamed")
+        self._check_name(new_name)
+        if new_name == node.name:
+            return node
+        if self._child(node.parent, new_name) is not None:
+            raise DuplicateNameError(f"already exists: {new_name}")
+        node.name = new_name
+        return node
+
+    def move(self, path: str, dest_folder_path: str) -> FSNode:
+        """Mueve un nodo (con todo su subárbol) a otra carpeta: base del Drag & Drop.
+        Evita ciclos (mover una carpeta dentro de sí misma o de sus descendientes)
+        y nombres duplicados en el destino. O(d + k)."""
+        node = self._resolve(path)
+        dest = self._resolve(dest_folder_path)
+        if node is self.root:
+            raise InvalidPathError("the root cannot be moved")
+        if dest.is_file:
+            raise NotAFolderError(f"destination is a file: {dest_folder_path}")
+        anc = dest
+        while anc is not None:  # el destino no puede estar dentro del nodo movido
+            if anc is node:
+                raise InvalidPathError("cannot move a folder into itself or its own subtree")
+            anc = anc.parent
+        if dest is node.parent:
+            return node
+        if self._child(dest, node.name) is not None:
+            raise DuplicateNameError(f"already exists in destination: {node.name}")
+        node.parent.children.remove(node)
+        node.parent = dest
+        dest.children.append(node)
+        return node
+
     # ---------------- funciones clave ----------------
     def count_files(self, path: Optional[str] = None) -> int:
         """Cuenta los ARCHIVOS de la carpeta indicada (por defecto, la raíz) y de
@@ -355,6 +396,7 @@ class FileExplorer:
             for c in n.children:
                 assert c.parent is n, f"inconsistent parent in {c.path}"
 
+
 # ----------------------------------------------------------------------------
 # Demo
 # ----------------------------------------------------------------------------
@@ -377,4 +419,3 @@ if __name__ == "__main__":
     print("Subfolders       :", ex.count_folders())
     print("Total size (B)   :", ex.total_size())
     print("*.py             :", ex.find("*.py"))
-
