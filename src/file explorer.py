@@ -354,3 +354,27 @@ class FileExplorer:
             assert len(names) == len(set(names)), f"duplicate names in {n.path}"
             for c in n.children:
                 assert c.parent is n, f"inconsistent parent in {c.path}"
+
+# ----------------------------------------------------------------------------
+# Demo
+# ----------------------------------------------------------------------------
+if __name__ == "__main__":
+    ex = FileExplorer("my-project")
+    ex.add_file("/my-project/README.md", 1200)
+    ex.add_file("/my-project/src/index.py", 2048, parents=True)
+    ex.add_file("/my-project/src/utils/helpers.py", 900, parents=True)
+    ex.add_file("/my-project/assets/style.css", 512, parents=True)
+    ex.add_file("/my-project/assets/img/logo.png", 20480, parents=True)
+    ex.add_file("/my-project/tests/test_main.py", 700, parents=True)
+    ex.add_folder("/my-project/docs")  # carpeta vacía
+
+    print("=== Structure (tree) ===")
+    ex.print_folder_structure()
+    print("\n=== Structure (indent) ===")
+    ex.print_folder_structure(style="indent")
+    print("\nTotal files      :", ex.count_files())
+    print("Files in /src    :", ex.count_files("/my-project/src"))
+    print("Subfolders       :", ex.count_folders())
+    print("Total size (B)   :", ex.total_size())
+    print("*.py             :", ex.find("*.py"))
+
