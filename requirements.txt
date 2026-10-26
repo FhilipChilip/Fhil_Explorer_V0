@@ -1,0 +1,8 @@
+# Explorador de Carpetas (Árbol N-ario)
+# Requiere Python 3.8 o superior.
+#
+# El sistema (file_explorer.py) usa SOLO la biblioteca estándar de Python,
+# por lo que no necesita dependencias para ejecutarse.
+#
+# Dependencias para ejecutar las pruebas (test_file_explorer.py):
+pytest>=7.0
