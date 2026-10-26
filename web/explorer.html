@@ -23,6 +23,7 @@ button.dan{color:var(--er)}
 #tree{max-height:420px;overflow:auto;border:1px solid var(--bd);border-radius:6px;padding:4px;user-select:none}
 .row{display:flex;gap:4px;align-items:center;padding:2px 6px;border-radius:5px;cursor:pointer;white-space:nowrap}
 .row:hover{background:var(--hv)}.row.sel{background:var(--acbg)}
+.row.drop{outline:2px dashed var(--ac);background:var(--acbg)}
 .row .sz{margin-left:auto;color:var(--mut);font-size:12px;padding-left:12px}
 .arrow{width:14px;color:var(--mut);text-align:center;font-size:11px}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
@@ -120,6 +121,29 @@ class FileExplorer {
     return node;
   }
 
+  rename(path, newName) {
+    const node = this.resolve(path);
+    if (node === this.root) throw new ExplorerError('The root cannot be renamed');
+    FileExplorer.checkName(newName);
+    if (newName === node.name) return node;
+    if (this.child(node.parent, newName)) throw new ExplorerError(`Already exists: ${newName}`);
+    node.name = newName;
+    return node;
+  }
+  move(path, destPath) {               // base del Drag & Drop
+    const node = this.resolve(path), dest = this.resolve(destPath);
+    if (node === this.root) throw new ExplorerError('The root cannot be moved');
+    if (dest.isFile) throw new ExplorerError(`Destination is a file: ${destPath}`);
+    for (let a = dest; a; a = a.parent) {   // evita ciclos
+      if (a === node) throw new ExplorerError('Cannot move a folder into itself or its own subtree');
+    }
+    if (dest === node.parent) return node;
+    if (this.child(dest, node.name)) throw new ExplorerError(`Already exists in destination: ${node.name}`);
+    node.parent.children.splice(node.parent.children.indexOf(node), 1);
+    node.parent = dest; dest.children.push(node);
+    return node;
+  }
+
   *walk(path) {                       // DFS pre-orden con PILA (sin recursión)
     const stack = [this.resolve(path)];
     while (stack.length) {
@@ -183,6 +207,7 @@ if (typeof module !== 'undefined') module.exports = { FileExplorer, FSNode, Expl
     <div class="bar">
       <button class="pri" id="bFolder">+ Folder</button>
       <button class="pri" id="bFile">+ File</button>
+      <button id="bRen" title="Rename (F2 or double-click)">Rename</button>
       <button class="dan" id="bDel">Delete</button>
       <label class="btn" title="Load a real folder from your PC (read-only, nothing is uploaded)">
         📂 Load from PC<input type="file" id="disk" webkitdirectory multiple hidden>
@@ -190,7 +215,7 @@ if (typeof module !== 'undefined') module.exports = { FileExplorer, FSNode, Expl
     </div>
     <div id="msg"></div>
     <div id="tree"></div>
-    <div class="mut" style="margin-top:6px;font-size:12px">Click a folder to open/close and select it. New items are created inside the selected folder.</div>
+    <div class="mut" style="margin-top:6px;font-size:12px">Click a folder to open/close and select it. Drag items onto a folder to move them (drop on the empty area to move to the root). Double-click or F2 to rename.</div>
   </div>
 
   <div class="card">
@@ -263,6 +288,17 @@ function draw() {
       if (n.isFolder) expanded.has(n) ? expanded.delete(n) : expanded.add(n);
       refresh();
     };
+    r.ondblclick = () => rename(n);
+    if (n !== ex.root) {
+      r.draggable = true;
+      r.ondragstart = e => { dragged = n; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', n.path); };
+      r.ondragend = () => { dragged = null; clearDrop(); };
+    }
+    if (n.isFolder) {
+      r.ondragover = e => { if (dragged) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; r.classList.add('drop'); } };
+      r.ondragleave = () => r.classList.remove('drop');
+      r.ondrop = e => { e.preventDefault(); e.stopPropagation(); dropOn(n); };
+    }
     tree.append(r);
   }
 }
@@ -276,6 +312,34 @@ function drawInfo() {
   $('out').textContent = ex.render(p, { style: $('style').value, showFiles: $('showFiles').checked });
 }
 function refresh() { draw(); drawInfo(); }
+
+let dragged = null;
+const clearDrop = () => document.querySelectorAll('.row.drop').forEach(x => x.classList.remove('drop'));
+function dropOn(target) {
+  const n = dragged; dragged = null; clearDrop();
+  if (!n) return;
+  try {
+    const from = n.path;
+    ex.move(from, target.path);
+    expanded.add(target); selected = n;
+    say(`Moved: ${from} → ${n.path}`); refresh();
+  } catch (e) { say(e.message, 'err'); }
+}
+function rename(node = selected) {
+  if (node === ex.root) return say('The root cannot be renamed.', 'err');
+  const name = prompt('New name:', node.name);
+  if (name === null) return;
+  try {
+    const old = node.path; ex.rename(old, name.trim()); selected = node;
+    say(`Renamed: ${old} → ${node.path}`); refresh();
+  } catch (e) { say(e.message, 'err'); }
+}
+$('bRen').onclick = () => rename();
+$('tree').ondragover = e => { if (dragged) e.preventDefault(); };
+$('tree').ondrop = e => { e.preventDefault(); dropOn(ex.root); };
+document.addEventListener('keydown', e => {
+  if (e.key === 'F2' && !['INPUT', 'SELECT'].includes(document.activeElement.tagName)) { e.preventDefault(); rename(); }
+});
 
 function targetFolder() { return selected.isFolder ? selected : selected.parent; }
 function add(kind) {
